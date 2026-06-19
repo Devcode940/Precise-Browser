@@ -13,6 +13,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import kotlinx.coroutines.delay
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -36,6 +47,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -87,6 +99,7 @@ fun BrowserApp(viewModel: BrowserViewModel) {
 
     // Dropdown menu state
     var isMenuExpanded by remember { mutableStateOf(false) }
+    var showAiHubDialog by remember { mutableStateOf(false) }
 
     // Toast manager state
     var toastText by remember { mutableStateOf("") }
@@ -293,7 +306,8 @@ fun BrowserApp(viewModel: BrowserViewModel) {
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                                 keyboardActions = KeyboardActions(onGo = {
                                     if (addressInput.trim().isNotEmpty()) {
-                                        val destination = formatBrowserUrl(addressInput.trim(), settingsMap["search_engine"] ?: "duckduckgo")
+                                        val pattern = settingsMap["search_engine_pattern"] ?: "https://duckduckgo.com/?q=%s"
+                                        val destination = formatBrowserUrl(addressInput.trim(), pattern)
                                         viewModel.updateTabUrl(activeTab.id, destination)
                                     }
                                 }),
@@ -370,6 +384,19 @@ fun BrowserApp(viewModel: BrowserViewModel) {
                             )
                         }
 
+                        // AI Chat Hub Button
+                        IconButton(
+                            onClick = { showAiHubDialog = true },
+                            modifier = Modifier.size(32.dp).testTag("ai_chat_hub_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "AI Chat Hub",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
                         // Menu Expand
                         IconButton(
                             onClick = { isMenuExpanded = true },
@@ -383,6 +410,13 @@ fun BrowserApp(viewModel: BrowserViewModel) {
                             expanded = isMenuExpanded,
                             onDismissRequest = { isMenuExpanded = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("AI Chat Hub ✨", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    showAiHubDialog = true
+                                    isMenuExpanded = false
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("New Tab", fontSize = 12.sp) },
                                 onClick = {
@@ -484,7 +518,9 @@ fun BrowserApp(viewModel: BrowserViewModel) {
                 when {
                     activeTab.url == "lite://newtab" -> {
                         NewTabScreen(viewModel, langCode) { targetUrl ->
-                            viewModel.updateTabUrl(activeTab.id, targetUrl)
+                            val pattern = settingsMap["search_engine_pattern"] ?: "https://duckduckgo.com/?q=%s"
+                            val destination = formatBrowserUrl(targetUrl, pattern)
+                            viewModel.updateTabUrl(activeTab.id, destination)
                         }
                     }
                     activeTab.url == "lite://bookmarks" -> {
@@ -595,6 +631,22 @@ fun BrowserApp(viewModel: BrowserViewModel) {
             }
         }
     }
+
+    if (showAiHubDialog) {
+        AIChatHubDialog(
+            onDismiss = { showAiHubDialog = false },
+            onOpenUrl = { url, inNewTab ->
+                showAiHubDialog = false
+                if (inNewTab) {
+                    viewModel.createNewTab(url)
+                } else if (activeTab != null) {
+                    viewModel.updateTabUrl(activeTab.id, url)
+                } else {
+                    viewModel.createNewTab(url)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -661,7 +713,7 @@ fun TabCard(
     }
 }
 
-fun formatBrowserUrl(input: String, engine: String): String {
+fun formatBrowserUrl(input: String, pattern: String): String {
     val trimmed = input.trim()
     if (trimmed.startsWith("lite://")) return trimmed
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
@@ -669,17 +721,12 @@ fun formatBrowserUrl(input: String, engine: String): String {
         return "https://$trimmed"
     }
 
-    val searchBase = when (engine) {
-        "google" -> "https://www.google.com/search?q="
-        "bing" -> "https://www.bing.com/search?q="
-        "yahoo" -> "https://search.yahoo.com/search?p="
-        "brave" -> "https://search.brave.com/search?q="
-        "ecosia" -> "https://www.ecosia.org/search?q="
-        "yandex" -> "https://yandex.com/search/?text="
-        "baidu" -> "https://www.baidu.com/s?wd="
-        else -> "https://duckduckgo.com/?q="
+    val encodedQuery = java.net.URLEncoder.encode(trimmed, "UTF-8")
+    return if (pattern.contains("%s")) {
+        pattern.replace("%s", encodedQuery)
+    } else {
+        pattern + encodedQuery
     }
-    return searchBase + java.net.URLEncoder.encode(trimmed, "UTF-8")
 }
 
 // Low-level helper block for older jetpack compose dependency mappings
@@ -710,4 +757,432 @@ fun BasicTextField(
             }
         }
     )
+}
+
+// AI Chat Provider class & data
+data class AIChatHubProvider(
+    val id: String,
+    val name: String,
+    val description: String,
+    val url: String,
+    val brandColor: Color,
+    val category: String,
+    val badge: String,
+    val note: String
+)
+
+val aiChatHubProvidersList = listOf(
+    AIChatHubProvider(
+        id = "gemini",
+        name = "Google Gemini",
+        description = "Advanced multimodal models by Google for reasoning, writing, and direct workspace connectivity.",
+        url = "https://gemini.google.com",
+        brandColor = Color(0xFF1E88E5),
+        category = "Multimodal",
+        badge = "Google",
+        note = "Seamlessly integrates with Google services & Search."
+    ),
+    AIChatHubProvider(
+        id = "chatgpt",
+        name = "OpenAI ChatGPT",
+        description = "World's leading conversational AI with custom GPTs, rich voice mode, and memory capabilities.",
+        url = "https://chatgpt.com",
+        brandColor = Color(0xFF10A37F),
+        category = "General",
+        badge = "OpenAI",
+        note = "Excellent for broad creative work & reasoning."
+    ),
+    AIChatHubProvider(
+        id = "claude",
+        name = "Anthropic Claude",
+        description = "A deeply intelligent, articulate assistant built with security and long-context processing.",
+        url = "https://claude.ai",
+        brandColor = Color(0xFFD97706),
+        category = "General",
+        badge = "Anthropic",
+        note = "Industry-standard for precision writing & coding."
+    ),
+    AIChatHubProvider(
+        id = "deepseek",
+        name = "DeepSeek Chat",
+        description = "Advanced reasoning, engineering & coding chat powered by DeepSeek-R1 logic engines.",
+        url = "https://chat.deepseek.com",
+        brandColor = Color(0xFF2563EB),
+        category = "Logic & Code",
+        badge = "DeepSeek",
+        note = "Incredibly fast and competitive reasoning benchmark."
+    ),
+    AIChatHubProvider(
+        id = "copilot",
+        name = "Microsoft Copilot",
+        description = "Intelligent companion integrated with Microsoft 365, web sourcing, & DALL-E image generation.",
+        url = "https://copilot.microsoft.com",
+        brandColor = Color(0xFF0078D4),
+        category = "Productivity",
+        badge = "Microsoft",
+        note = "Perfect for finding structured web citations."
+    ),
+    AIChatHubProvider(
+        id = "perplexity",
+        name = "Perplexity AI",
+        description = "Conversational search model compiling verified web search resources with direct citations.",
+        url = "https://perplexity.ai",
+        brandColor = Color(0xFF0D9488),
+        category = "Research",
+        badge = "Search",
+        note = "Saves hours of browsing search engine link lists."
+    ),
+    AIChatHubProvider(
+        id = "huggingchat",
+        name = "HuggingChat",
+        description = "Leading open-source conversational chat with a curated directory of open-weights community models.",
+        url = "https://huggingface.co/chat",
+        brandColor = Color(0xFFFBBF24),
+        category = "Open Source",
+        badge = "Community",
+        note = "Fully customizable models including Llama, Command-R, etc."
+    )
+)
+
+@Composable
+fun AIChatHubDialog(
+    onDismiss: () -> Unit,
+    onOpenUrl: (String, Boolean) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("All") }
+
+    val categories = listOf("All", "Multimodal", "General", "Logic & Code", "Research", "Open Source")
+
+    val filteredProviders = aiChatHubProvidersList.filter { provider ->
+        val matchesSearch = provider.name.contains(searchQuery, ignoreCase = true) ||
+                provider.description.contains(searchQuery, ignoreCase = true) ||
+                provider.badge.contains(searchQuery, ignoreCase = true)
+        val matchesCategory = selectedCategory == "All" || provider.category == selectedCategory
+        matchesSearch && matchesCategory
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(vertical = 16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Title and Close button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "AI Chats Explorer",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Dialog",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Search Box
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search virtual assistants...", fontSize = 12.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("ai_hub_search_input"),
+                    singleLine = true,
+                    shape = RoundedCornerShape(28.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.background,
+                        focusedContainerColor = MaterialTheme.colorScheme.background
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Scrollable category filters
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    categories.forEach { cat ->
+                        val isSelected = selectedCategory == cat
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(cat, fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // List of filtered assistants
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (filteredProviders.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SearchOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No matching AI chats found",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    } else {
+                        items(filteredProviders) { provider ->
+                            AIChatCardItem(
+                                provider = provider,
+                                onOpen = { openInNewTab ->
+                                    onOpenUrl(provider.url, openInNewTab)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Footer note
+                Text(
+                    text = "Tip: Access AI Chat Hub instantly from the main toolbar sparkle icon at any time.",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AIChatCardItem(
+    provider: AIChatHubProvider,
+    onOpen: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("ai_provider_card_${provider.id}"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        ),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            // Header: Icon + Name + Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(provider.brandColor.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = provider.name.take(1).uppercase(),
+                            color = provider.brandColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = provider.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = provider.url,
+                            fontSize = 10.sp,
+                            color = provider.brandColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Custom Group Badge
+                Box(
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.secondaryContainer,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = provider.badge,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Body Description
+            Text(
+                text = provider.description,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            )
+
+            if (provider.note.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = provider.note,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Interactive Actions Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Open in Current Tab Action
+                TextButton(
+                    onClick = { onOpen(false) },
+                    modifier = Modifier
+                        .height(36.dp)
+                        .padding(end = 6.dp)
+                        .testTag("ai_provider_card_open_current_${provider.id}")
+                ) {
+                    Text(
+                        "Open Here",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Open in New Tab Action
+                Button(
+                    onClick = { onOpen(true) },
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("ai_provider_card_open_new_${provider.id}"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = provider.brandColor
+                    ),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.OpenInNew,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "New Tab",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

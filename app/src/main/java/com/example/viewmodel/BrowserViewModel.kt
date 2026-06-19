@@ -60,6 +60,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val defaults = mapOf(
                     "theme" to "dark",
                     "search_engine" to "duckduckgo",
+                    "search_engine_pattern" to "https://duckduckgo.com/?q=%s",
                     "show_bookmarks_bar" to "true",
                     "auto_hide_toolbar" to "false",
                     "language" to "en",

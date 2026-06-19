@@ -219,7 +219,106 @@ fun NewTabScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // AI CHATS QUICK COGNITION HUB
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .maxWidthIn(600.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "Quick AI Workspace",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val aiShortcuts = listOf(
+                        Triple("Gemini", "https://gemini.google.com", Color(0xFF1E88E5)),
+                        Triple("ChatGPT", "https://chatgpt.com", Color(0xFF10A37F)),
+                        Triple("Claude", "https://claude.ai", Color(0xFFD97706)),
+                        Triple("DeepSeek", "https://chat.deepseek.com", Color(0xFF2563EB)),
+                        Triple("Copilot", "https://copilot.microsoft.com", Color(0xFF0078D4)),
+                        Triple("Perplexity", "https://perplexity.ai", Color(0xFF0D9488)),
+                        Triple("HuggingChat", "https://huggingface.co/chat", Color(0xFFFBBF24))
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        FlowRowLayout(
+                            horizontalGap = 8.dp,
+                            verticalGap = 8.dp
+                        ) {
+                            aiShortcuts.forEach { (name, url, brandColor) ->
+                                Card(
+                                    onClick = { onNavigate(url) },
+                                    modifier = Modifier
+                                        .testTag("ai_grid_shortcut_$name"),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        brandColor.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(brandColor, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = name,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
@@ -1283,9 +1382,78 @@ fun SettingsScreen(
             label = "Search Engine Provider",
             desc = "Redirect typed queries dynamically",
             currentValue = searchEngine.uppercase(),
-            options = listOf("DUCKDUCKGO", "GOOGLE", "BING", "YAHOO", "BRAVE", "ECOSIA", "YANDEX", "BAIDU"),
-            onSelect = { viewModel.updateSetting("search_engine", it.lowercase()) }
+            options = listOf("DUCKDUCKGO", "GOOGLE", "BING", "YAHOO", "BRAVE", "ECOSIA", "YANDEX", "BAIDU", "CUSTOM"),
+            onSelect = { selected ->
+                val engineKey = selected.lowercase()
+                viewModel.updateSetting("search_engine", engineKey)
+                val defaultPattern = when (engineKey) {
+                    "google" -> "https://www.google.com/search?q=%s"
+                    "bing" -> "https://www.bing.com/search?q=%s"
+                    "yahoo" -> "https://search.yahoo.com/search?p=%s"
+                    "brave" -> "https://search.brave.com/search?q=%s"
+                    "ecosia" -> "https://www.ecosia.org/search?q=%s"
+                    "yandex" -> "https://yandex.com/search/?text=%s"
+                    "baidu" -> "https://www.baidu.com/s?wd=%s"
+                    "duckduckgo" -> "https://duckduckgo.com/?q=%s"
+                    else -> null
+                }
+                if (defaultPattern != null) {
+                    viewModel.updateSetting("search_engine_pattern", defaultPattern)
+                }
+            }
         )
+
+        val searchEnginePattern = settingsMap["search_engine_pattern"] ?: "https://duckduckgo.com/?q=%s"
+        var patternInput by remember(searchEnginePattern) { mutableStateOf(searchEnginePattern) }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("Default Query URL Pattern", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(
+                    "Define custom provider format. Use '%s' as search query wildcard.",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = patternInput,
+                    onValueChange = {
+                        patternInput = it
+                        viewModel.updateSetting("search_engine_pattern", it)
+                        // Auto-toggle dropdown selection based on user-typed pattern
+                        val presets = mapOf(
+                            "google" to "https://www.google.com/search?q=%s",
+                            "bing" to "https://www.bing.com/search?q=%s",
+                            "yahoo" to "https://search.yahoo.com/search?p=%s",
+                            "brave" to "https://search.brave.com/search?q=%s",
+                            "ecosia" to "https://www.ecosia.org/search?q=%s",
+                            "yandex" to "https://yandex.com/search/?text=%s",
+                            "baidu" to "https://www.baidu.com/s?wd=%s",
+                            "duckduckgo" to "https://duckduckgo.com/?q=%s"
+                        )
+                        val match = presets.entries.find { entry -> entry.value == it }
+                        if (match != null) {
+                            viewModel.updateSetting("search_engine", match.key)
+                        } else {
+                            viewModel.updateSetting("search_engine", "custom")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("search_engine_pattern_input"),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.background,
+                        focusedContainerColor = MaterialTheme.colorScheme.background
+                    )
+                )
+            }
+        }
 
         SettingsDropdown(
             label = "User Agent Simulation",

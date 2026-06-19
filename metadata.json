@@ -1,5 +1,5 @@
 {
-  "name": "Chromium Lite",
+  "name": "EAST WEB LITE",
   "description": "Fast and feature-rich browser with multi-tab management, password vault, chunked downloader, bookmarks, search engine options, and built-in PDF viewer.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
